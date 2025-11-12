@@ -225,3 +225,4 @@ console.log("🔄 Presiona Ctrl+C para detener\n");
 // Ejecutar cada X segundos (Render reinicia si se congela)
 setInterval(checkServer, 180000);
 checkServer();
+
