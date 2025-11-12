@@ -1,6 +1,7 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import { WebhookClient, EmbedBuilder } from "discord.js";
+import http from 'http';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -392,3 +393,16 @@ console.log("🔄 Presiona Ctrl+C para detener\n");
 
 // Ejecutar el bucle principal cada 1 segundo
 setInterval(mainLoop, 1000);
+
+// --- SERVIDOR HTTP PARA RENDER (Mantiene el servicio activo) ---
+const PORT = process.env.PORT || 3000;
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🦖 ARK Server Monitor is running!\n');
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 Servidor HTTP iniciado en puerto ${PORT}`);
+  console.log(`✅ El servicio se mantendrá activo en Render\n`);
+});
