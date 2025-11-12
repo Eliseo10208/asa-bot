@@ -285,26 +285,37 @@ async function updateMonitorMessage() {
   // ************************************************
   // IMPLEMENTACIÓN DE LA TABLA DE JUGADORES
   // ************************************************
-  if (data.playerList && data.playerList.length > 0) {
-    messageContent += "```markdown\n";
-    messageContent += "| NAME                         | PLATFORM | PLAYTIME |\n";
-    messageContent += "| ---------------------------- | -------- | -------- |\n";
+  if (data.playerCount > 0) {
+    messageContent += "```\n";
+    
+    // Encabezado de la tabla
+    messageContent += "|➖|----------------|---------|------|---------|----------|----------|\n";
+    messageContent += "|⚪| NAME           | ID      | MAIN | COMMENT | PLATFORM | PLAYTIME |\n";
+    messageContent += "|➖|----------------|---------|------|---------|----------|----------|\n";
 
-    const steamPlayers = data.playerList.filter(p => !p.platform || p.platform.toLowerCase() === "steam" || !p.platform);
-    const otherPlayers = data.playerList.filter(p => p.platform && p.platform.toLowerCase() !== "steam");
-
-    const generateRow = (player, platformName) => {
-      const name = (player.name || "Unknown").padEnd(28).substring(0, 28);
-      const platform = platformName.padEnd(8);
-      const playtime = formatPlaytime(player.sessionPlaytime || 0);
-      return `| ${name} | ${platform} | ${playtime} |\n`;
+    // Función para generar una fila con el formato correcto
+    const generateRow = (player, index) => {
+      const name = (player?.name || "Unknown").padEnd(13).substring(0, 13);
+      const id = (player?.id || player?.steamId || `unk${index}`).toString().substring(0, 7).padEnd(7);
+      const main = (player?.meta?.serverId || data.serverId || "N/A").toString().padEnd(4).substring(0, 4);
+      const comment = (player?.comment || "NONE").padEnd(7).substring(0, 7);
+      const platform = (player?.platform || "STEAM").toUpperCase().padEnd(8).substring(0, 8);
+      const playtime = formatPlaytime(player?.sessionPlaytime || player?.meta?.sessionPlaytime || 0);
+      
+      return `|⚪| ${name} | ${id} | ${main} | ${comment} | ${platform} | ${playtime} |\n`;
     };
 
-    otherPlayers.forEach((player) => { messageContent += generateRow(player, player.platform || "Unknown"); });
-
-    if (steamPlayers.length > 0 && otherPlayers.length > 0) { messageContent += "| ---------------------------- | -------- | -------- |\n"; }
-
-    steamPlayers.forEach((player) => { messageContent += generateRow(player, "STEAM"); });
+    // Si hay playerList, usar esos datos
+    if (data.playerList && data.playerList.length > 0) {
+      data.playerList.forEach((player, index) => {
+        messageContent += generateRow(player, index);
+      });
+    } else {
+      // Si no hay playerList pero hay jugadores, generar filas con datos "Unknown"
+      for (let i = 0; i < data.playerCount; i++) {
+        messageContent += generateRow(null, i);
+      }
+    }
 
     messageContent += "```";
   } else {
