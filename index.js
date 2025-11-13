@@ -118,17 +118,28 @@ async function checkServer() {
     let serverData = null;
     let servers = [];
     
+    // Configurar timeout para axios (10 segundos)
+    const axiosConfig = {
+      timeout: 10000, // 10 segundos timeout
+      headers: {
+        'User-Agent': 'ARK-Server-Monitor/1.0'
+      }
+    };
+    
     // Búsqueda por ID o IP
     if (SERVER_ID && API_URL_BY_ID) {
       // (Lógica de búsqueda por ID/IP como en tu código original)
       try {
-        const { data } = await axios.get(API_URL_BY_ID);
+        const { data } = await axios.get(API_URL_BY_ID, axiosConfig);
         serverData = data.data;
-      } catch (error) { /* Ignorar y buscar por IP */ }
+      } catch (error) { 
+        console.log(`⚠️ Error al buscar por ID, intentando por IP...`);
+        // Ignorar y buscar por IP 
+      }
     }
     
     if (!serverData) {
-      const { data } = await axios.get(API_URL_BY_IP);
+      const { data } = await axios.get(API_URL_BY_IP, axiosConfig);
       servers = data.data || [];
       
       for (const server of servers) {
@@ -186,21 +197,26 @@ async function checkServer() {
       };
       
       // Manejo de alertas (igual que tu código original)
-      if (playerCount >= 25 && !lastAlert25) {
-        const alert = new EmbedBuilder()
-          .setTitle("🚨 ALERT PROBABLY ENEMY IS HERE! 🚨").setDescription(`**${name}** está casi lleno con **${playerCount}/${maxPlayers} jugadores**!`)
-          .setColor(0xff0000).setTimestamp().setFooter({ text: "🦖 ARK Server Monitor • Alerta de Población" });
-        await webhook.send({ content: "@here", embeds: [alert] });
-        lastAlert25 = true; lastAlert20 = true;
-      } else if (playerCount >= 20 && !lastAlert20) {
-        const alert = new EmbedBuilder()
-          .setTitle("⚠️ ALERTA - SERVIDOR LLENANDOSE EXOOO IS HERE !!!!").setDescription(`**${name}** tiene muchos jugadores: **${playerCount}/${maxPlayers}**`)
-          .setColor(0xff8800).setTimestamp().setFooter({ text: "🦖 ARK Server Monitor • Alerta de Población" });
-        await webhook2.send({ content: "@here", embeds: [alert] });
-        lastAlert20 = true;
-      }
-      if (playerCount < 20) {
-        lastAlert20 = false; lastAlert25 = false;
+      try {
+        if (playerCount >= 25 && !lastAlert25) {
+          const alert = new EmbedBuilder()
+            .setTitle("🚨 ALERT PROBABLY ENEMY IS HERE! 🚨").setDescription(`**${name}** está casi lleno con **${playerCount}/${maxPlayers} jugadores**!`)
+            .setColor(0xff0000).setTimestamp().setFooter({ text: "🦖 ARK Server Monitor • Alerta de Población" });
+          await webhook.send({ content: "@here", embeds: [alert] });
+          lastAlert25 = true; lastAlert20 = true;
+        } else if (playerCount >= 20 && !lastAlert20) {
+          const alert = new EmbedBuilder()
+            .setTitle("⚠️ ALERTA - SERVIDOR LLENANDOSE EXOOO IS HERE !!!!").setDescription(`**${name}** tiene muchos jugadores: **${playerCount}/${maxPlayers}**`)
+            .setColor(0xff8800).setTimestamp().setFooter({ text: "🦖 ARK Server Monitor • Alerta de Población" });
+          await webhook2.send({ content: "@here", embeds: [alert] });
+          lastAlert20 = true;
+        }
+        if (playerCount < 20) {
+          lastAlert20 = false; lastAlert25 = false;
+        }
+      } catch (alertError) {
+        console.error("❌ Error al enviar alerta:", alertError.message);
+        // No detener el proceso por errores de alertas
       }
 
       console.log(`✅ Datos del servidor actualizados: ${name}. Jugadores: ${playerCount}`);
@@ -213,6 +229,14 @@ async function checkServer() {
 
   } catch (e) {
     console.error("❌ Error al consultar el servidor:", e.message);
+    if (e.code === 'ECONNABORTED') {
+      console.error("⏱️ Timeout: La petición tardó más de 10 segundos");
+    } else if (e.code === 'ENOTFOUND' || e.code === 'ECONNREFUSED') {
+      console.error("🌐 Error de conexión: No se pudo conectar a la API");
+    }
+    // Asegurar que el contador se reinicie incluso si hay error
+    countdown = API_CHECK_INTERVAL_SECONDS;
+    lastApiCheckTimestamp = Date.now();
     return false;
   }
 }
@@ -342,34 +366,55 @@ async function updateMonitorMessage() {
     // Manejo de errores de ID no válido (mensaje borrado)
     if (error.code === 10008) {
       console.log(`⚠️ Mensaje de monitor no encontrado, creando uno nuevo...`);
-      const message = await webhook.send({ embeds: [embed] });
-      monitorMessageId = message.id;
+      try {
+        const message = await webhook.send({ embeds: [embed] });
+        monitorMessageId = message.id;
+      } catch (retryError) {
+        console.error("❌ Error al crear nuevo mensaje:", retryError.message);
+        monitorMessageId = null; // Reset para intentar de nuevo en la próxima iteración
+      }
+    } else if (error.code === 429) {
+      console.error("⚠️ Rate limit de Discord, esperando...");
+      // No resetear el messageId, solo esperar
     } else {
       console.error("❌ Error al actualizar mensaje de monitor:", error.message);
+      // Si el error es crítico, resetear el messageId
+      if (error.code === 50001 || error.code === 50013) {
+        monitorMessageId = null;
+      }
     }
   }
 }
 
 // --- LÓGICA DEL BUCLE PRINCIPAL (El corazón de la cuenta regresiva) ---
 async function mainLoop() {
-  // 1. Verificar si es tiempo de llamar a la API
-  if (countdown <= 0) {
-    await checkServer(); // Llama a la API y reinicia 'countdown'
-  }
+  try {
+    // 1. Verificar si es tiempo de llamar a la API
+    if (countdown <= 0) {
+      await checkServer(); // Llama a la API y reinicia 'countdown'
+    }
 
-  // 2. Actualizar el mensaje de Discord (solo si el contador es múltiplo de 10)
-  // Esto mantiene el contador en Discord actualizado cada 10s, no cada 1s
-  if (countdown % MESSAGE_UPDATE_INTERVAL_SECONDS === 0 || countdown === API_CHECK_INTERVAL_SECONDS) {
-    await updateMonitorMessage();
-    console.log(`[Timer Tick] Próxima API en: ${formatCountdown(countdown)}`);
-  }
-  
-  // 3. Decrementar la cuenta regresiva
-  countdown--;
+    // 2. Actualizar el mensaje de Discord (solo si el contador es múltiplo de 10)
+    // Esto mantiene el contador en Discord actualizado cada 10s, no cada 1s
+    if (countdown % MESSAGE_UPDATE_INTERVAL_SECONDS === 0 || countdown === API_CHECK_INTERVAL_SECONDS) {
+      await updateMonitorMessage();
+      console.log(`[Timer Tick] Próxima API en: ${formatCountdown(countdown)}`);
+    }
+    
+    // 3. Decrementar la cuenta regresiva
+    countdown--;
 
-  // Esto es para la ejecución inicial y si la API falló y no reinició el contador
-  if (countdown < 0) {
-      countdown = API_CHECK_INTERVAL_SECONDS - 1;
+    // Esto es para la ejecución inicial y si la API falló y no reinició el contador
+    if (countdown < 0) {
+        countdown = API_CHECK_INTERVAL_SECONDS - 1;
+    }
+  } catch (error) {
+    // Capturar cualquier error no esperado en el bucle principal
+    console.error("❌ ERROR CRÍTICO en mainLoop:", error.message);
+    console.error("Stack trace:", error.stack);
+    // Asegurar que el contador se reinicie para no quedarse pegado
+    countdown = API_CHECK_INTERVAL_SECONDS;
+    lastApiCheckTimestamp = Date.now();
   }
 }
 
@@ -405,4 +450,41 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`🌐 Servidor HTTP iniciado en puerto ${PORT}`);
   console.log(`✅ El servicio se mantendrá activo en Render\n`);
+});
+
+// Manejo de errores del servidor HTTP
+server.on('error', (error) => {
+  console.error("❌ Error en servidor HTTP:", error.message);
+  // No detener el proceso, solo loguear
+});
+
+// --- MANEJO DE ERRORES GLOBALES (CRÍTICO PARA RENDER) ---
+process.on('unhandledRejection', (reason, promise) => {
+  console.error("❌ UNHANDLED REJECTION:", reason);
+  console.error("Promise:", promise);
+  // No detener el proceso, solo loguear
+});
+
+process.on('uncaughtException', (error) => {
+  console.error("❌ UNCAUGHT EXCEPTION:", error.message);
+  console.error("Stack:", error.stack);
+  // En producción, es mejor no cerrar el proceso inmediatamente
+  // pero loguear el error para debugging
+});
+
+// Manejo de señales de terminación
+process.on('SIGTERM', () => {
+  console.log("🛑 SIGTERM recibido, cerrando servidor...");
+  server.close(() => {
+    console.log("✅ Servidor HTTP cerrado");
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log("🛑 SIGINT recibido, cerrando servidor...");
+  server.close(() => {
+    console.log("✅ Servidor HTTP cerrado");
+    process.exit(0);
+  });
 });
