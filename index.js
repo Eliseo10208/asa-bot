@@ -24,8 +24,8 @@ const API_URL_BY_IP = `https://api.battlemetrics.com/servers?filter[game]=arksa&
 const API_URL_BY_ID = SERVER_ID ? `https://api.battlemetrics.com/servers/${SERVER_ID}` : null;
 
 // INTERVALOS (Tiempo de espera antes de llamar a la API)
-const API_CHECK_INTERVAL_SECONDS = 30; // cada 10 segundos
-const MESSAGE_UPDATE_INTERVAL_SECONDS = 1; // Actualizar Discord cada 10 segundos para no saturar
+const API_CHECK_INTERVAL_SECONDS = 60; // cada 10 segundos
+const MESSAGE_UPDATE_INTERVAL_SECONDS = 10; // Actualizar Discord cada 10 segundos para no saturar
 
 // --- ESTADO GLOBAL ---
 const webhook = new WebhookClient({ url: WEBHOOK_URL });
